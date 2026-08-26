@@ -134,9 +134,9 @@ def _same_origin(url: str, manager_url: str, field: str) -> str:
     return validated
 
 
-def _atomic_write(path: Path, data: bytes, mode: int) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(path.parent, 0o700)
+def _atomic_write(path: Path, data: bytes, mode: int, *, parent_mode: int = 0o700) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True, mode=parent_mode)
+    os.chmod(path.parent, parent_mode)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
     try:

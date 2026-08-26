@@ -43,7 +43,7 @@ def main() -> int:
             "FFMPEG_PATH": "/usr/bin/ffmpeg",
         }
         data = "".join(f"{key}={value}\n" for key, value in values.items()).encode("ascii")
-        _atomic_write(args.output, data, 0o640)
+        _atomic_write(args.output, data, 0o640, parent_mode=0o750)
         print(f"CONFIG_RENDERED relay_id={bundle['relay_id']}")
     except BootstrapError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

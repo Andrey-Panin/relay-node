@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -101,6 +102,24 @@ def test_enrollment_writes_identity_last_and_reuses_it(tmp_path, monkeypatch):
     replayed, reused = bootstrap_client.enroll(manager, tmp_path / "ca.pem", state_dir, "0.2.0")
     assert reused is True
     assert replayed["agent_token"] == "A" * 32
+
+
+@pytest.mark.skipif(os.name != "posix", reason="directory mode semantics are POSIX-specific")
+def test_atomic_write_parent_mode_preserves_secret_and_service_directory_modes(tmp_path):
+    service_dir = tmp_path / "relay-agent"
+    service_dir.mkdir(mode=0o750)
+    bootstrap_client._atomic_write(
+        service_dir / "relay-agent.env",
+        b"CONFIG=1\n",
+        0o640,
+        parent_mode=0o750,
+    )
+    assert service_dir.stat().st_mode & 0o777 == 0o750
+
+    secret_dir = tmp_path / "credentials"
+    secret_dir.mkdir(mode=0o750)
+    bootstrap_client._atomic_write(secret_dir / "token", b"secret\n", 0o400)
+    assert secret_dir.stat().st_mode & 0o777 == 0o700
 
 
 def test_status_requires_full_pool_eligibility(tmp_path, monkeypatch):
