@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
 from pathlib import Path
+
+import pytest
+
+from scripts import check_public_tree
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -85,3 +91,53 @@ def test_no_pipefail_sigpipe_prone_runtime_probes():
     assert "ERROR: ffmpeg RTSP demuxer lacks timeout support" in runtime
     assert "ERROR: UFW lacks RTMP/1935 allow rule" in verify
     assert "ERROR: UFW lacks SRT/8890 allow rule" in verify
+
+
+def test_installer_cleans_bytecode_before_strict_validation():
+    installer = read("install.sh")
+    assert "export PYTHONDONTWRITEBYTECODE=1" in installer
+    assert "check_public_tree.py\" --clean-bytecode" in installer
+    assert installer.index("--clean-bytecode") < installer.index("secret_scan.py")
+
+
+def test_clean_bytecode_removes_only_cache_artifacts(tmp_path):
+    cache = tmp_path / "scripts" / "__pycache__"
+    cache.mkdir(parents=True)
+    stale = cache / "module.cpython-312.pyc"
+    stale.write_bytes(b"stale")
+    git_stale = tmp_path / ".git" / "__pycache__" / "git.cpython-312.pyc"
+    git_stale.parent.mkdir(parents=True)
+    git_stale.write_bytes(b"keep")
+    unexpected = tmp_path / "unexpected.txt"
+    unexpected.write_text("user/source file", encoding="utf-8")
+
+    assert check_public_tree.clean_bytecode(tmp_path) == 1
+    assert not stale.exists()
+    assert git_stale.exists()
+    assert unexpected.exists()
+
+    reviewed = tmp_path / "README.md"
+    reviewed.write_text("reviewed\n", encoding="utf-8")
+    digest = hashlib.sha256(reviewed.read_bytes()).hexdigest()
+    (tmp_path / "PUBLIC_FILES.txt").write_text("README.md\nSHA256SUMS\n", encoding="utf-8")
+    (tmp_path / "SHA256SUMS").write_text(f"{digest}  README.md\n", encoding="ascii")
+    with pytest.raises(check_public_tree.TreeError, match="public tree mismatch"):
+        check_public_tree.check(tmp_path)
+
+
+def test_clean_bytecode_does_not_follow_symlink(tmp_path):
+    if os.name != "posix":
+        pytest.skip("symlink semantics are POSIX-specific")
+    outside = tmp_path.parent / "relay-node-outside-bytecode"
+    outside.mkdir()
+    try:
+        target = outside / "external.pyc"
+        target.write_bytes(b"keep")
+        cache = tmp_path / "scripts" / "__pycache__"
+        cache.mkdir(parents=True)
+        (cache / "external.pyc").symlink_to(target)
+        assert check_public_tree.clean_bytecode(tmp_path) == 0
+        assert target.exists()
+    finally:
+        target.unlink(missing_ok=True)
+        outside.rmdir()

@@ -53,6 +53,28 @@ def _actual_files(root: Path) -> list[str]:
     return sorted(result)
 
 
+def clean_bytecode(root: Path) -> int:
+    """Remove only Python bytecode files in non-symlink __pycache__ directories."""
+    root = root.resolve(strict=True)
+    removed = 0
+    for current, directories, files in os.walk(root, topdown=True, followlinks=False):
+        directories[:] = [
+            name
+            for name in directories
+            if name not in {".git", ".deployment-backups"}
+            and not (Path(current) / name).is_symlink()
+        ]
+        if Path(current).name != "__pycache__":
+            continue
+        for name in files:
+            path = Path(current) / name
+            if path.is_symlink() or path.suffix not in {".pyc", ".pyo"}:
+                continue
+            path.unlink()
+            removed += 1
+    return removed
+
+
 def _load_hashes(root: Path) -> dict[str, str]:
     result: dict[str, str] = {}
     try:
@@ -88,8 +110,11 @@ def check(root: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("root", nargs="?", type=Path, default=Path(__file__).resolve().parent.parent)
+    parser.add_argument("--clean-bytecode", action="store_true")
     args = parser.parse_args()
     try:
+        if args.clean_bytecode:
+            print(f"BYTECODE_CLEANED count={clean_bytecode(args.root)}")
         check(args.root)
     except (OSError, TreeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

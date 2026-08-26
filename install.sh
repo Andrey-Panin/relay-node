@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
+export PYTHONDONTWRITEBYTECODE=1
 
 if (($#)); then
   echo "ERROR: install.sh takes no arguments" >&2
@@ -41,7 +42,7 @@ trap 'exit 130' INT TERM
 
 echo "[1/8] Validating host and public source tree"
 bash "${SCRIPT_DIR}/scripts/preflight.sh"
-python3 "${SCRIPT_DIR}/scripts/check_public_tree.py" "${SCRIPT_DIR}"
+python3 "${SCRIPT_DIR}/scripts/check_public_tree.py" --clean-bytecode "${SCRIPT_DIR}"
 python3 "${SCRIPT_DIR}/scripts/secret_scan.py" "${SCRIPT_DIR}"
 
 echo "[2/8] Creating verified rollback backup"
