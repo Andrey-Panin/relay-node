@@ -37,7 +37,11 @@ EOF
 # Noble ships 7:6.1.1-3ubuntu5. Ubuntu Pro can supply a signed +esmN
 # successor. Accept only that official family, select the repository candidate,
 # and never force a downgrade from a newer ESM build.
-candidate_ffmpeg=$(apt-cache policy ffmpeg | awk '/Candidate:/ {print $2; exit}')
+if ! apt_policy=$(apt-cache policy ffmpeg); then
+  echo "ERROR: apt-cache could not inspect the ffmpeg candidate" >&2
+  exit 1
+fi
+candidate_ffmpeg=$(awk '/Candidate:/ && candidate == "" {candidate=$2} END {print candidate}' <<<"${apt_policy}")
 installed_ffmpeg=$(dpkg-query -W -f='${Version}' ffmpeg 2>/dev/null || true)
 ffmpeg_family_re='^7:6\.1\.1-3ubuntu5(\+esm[0-9]+)?$'
 if [[ -n ${installed_ffmpeg} && ! ${installed_ffmpeg} =~ ${ffmpeg_family_re} ]]; then
@@ -61,9 +65,26 @@ installed_ffmpeg=$(dpkg-query -W -f='${Version}' ffmpeg)
   echo "ERROR: installed ffmpeg failed the Noble package-family validation" >&2
   exit 1
 }
-/usr/bin/ffmpeg -hide_banner -protocols 2>/dev/null | grep -Eq '^[[:space:]]+rtmp$'
-/usr/bin/ffmpeg -hide_banner -protocols 2>/dev/null | grep -Eq '^[[:space:]]+rtmps$'
-/usr/bin/ffmpeg -hide_banner -h demuxer=rtsp 2>/dev/null | grep -q 'timeout'
+if ! ffmpeg_protocols=$(/usr/bin/ffmpeg -hide_banner -protocols 2>/dev/null); then
+  echo "ERROR: ffmpeg protocol capability probe failed" >&2
+  exit 1
+fi
+grep -Eq '^[[:space:]]+rtmp$' <<<"${ffmpeg_protocols}" || {
+  echo "ERROR: ffmpeg lacks RTMP protocol support" >&2
+  exit 1
+}
+grep -Eq '^[[:space:]]+rtmps$' <<<"${ffmpeg_protocols}" || {
+  echo "ERROR: ffmpeg lacks RTMPS protocol support" >&2
+  exit 1
+}
+if ! ffmpeg_rtsp_help=$(/usr/bin/ffmpeg -hide_banner -h demuxer=rtsp 2>/dev/null); then
+  echo "ERROR: ffmpeg RTSP demuxer capability probe failed" >&2
+  exit 1
+fi
+grep -q 'timeout' <<<"${ffmpeg_rtsp_help}" || {
+  echo "ERROR: ffmpeg RTSP demuxer lacks timeout support" >&2
+  exit 1
+}
 
 getent group media-relay >/dev/null || groupadd --system media-relay
 id mediamtx >/dev/null 2>&1 || useradd --system --gid media-relay --home-dir /var/lib/mediamtx --shell /usr/sbin/nologin mediamtx
@@ -124,5 +145,9 @@ sysctl --system >/dev/null
 systemctl daemon-reload
 
 "/opt/mediamtx/current/mediamtx" --version
-/usr/bin/ffmpeg -version | head -n 1
+if ! ffmpeg_version=$(/usr/bin/ffmpeg -version); then
+  echo "ERROR: ffmpeg version probe failed" >&2
+  exit 1
+fi
+printf '%s\n' "${ffmpeg_version%%$'\n'*}"
 echo "RUNTIME_STAGED release=${RELEASE_VERSION}-${RELEASE_STAMP} backup=${backup_real}"

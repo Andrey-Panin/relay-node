@@ -66,3 +66,22 @@ def test_no_old_deployment_backup_or_hotfix_is_packaged():
     names = {path.relative_to(ROOT).as_posix() for path in ROOT.rglob("*")}
     assert not any(".deployment-backups" in value for value in names)
     assert "deploy_agent_hotfix.py" not in names
+
+
+def test_no_pipefail_sigpipe_prone_runtime_probes():
+    runtime = read("scripts/install_runtime.sh")
+    verify = read("scripts/verify.sh")
+    forbidden = (
+        "apt-cache policy ffmpeg | awk",
+        "/usr/bin/ffmpeg -hide_banner -protocols 2>/dev/null | grep",
+        "/usr/bin/ffmpeg -hide_banner -h demuxer=rtsp 2>/dev/null | grep",
+        "/usr/bin/ffmpeg -version | head",
+        "ufw status | grep",
+    )
+    assert all(shape not in runtime + verify for shape in forbidden)
+    assert "apt_policy=$(apt-cache policy ffmpeg)" in runtime
+    assert "ERROR: ffmpeg lacks RTMP protocol support" in runtime
+    assert "ERROR: ffmpeg lacks RTMPS protocol support" in runtime
+    assert "ERROR: ffmpeg RTSP demuxer lacks timeout support" in runtime
+    assert "ERROR: UFW lacks RTMP/1935 allow rule" in verify
+    assert "ERROR: UFW lacks SRT/8890 allow rule" in verify

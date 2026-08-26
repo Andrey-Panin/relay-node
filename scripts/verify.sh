@@ -4,7 +4,11 @@ set -euo pipefail
 [[ ${EUID} -eq 0 ]] || { echo "ERROR: run as root" >&2; exit 1; }
 echo "VERSIONS"
 /opt/mediamtx/current/mediamtx --version
-/usr/bin/ffmpeg -version | head -n 1
+if ! ffmpeg_version=$(/usr/bin/ffmpeg -version); then
+  echo "ERROR: ffmpeg version probe failed" >&2
+  exit 1
+fi
+printf '%s\n' "${ffmpeg_version%%$'\n'*}"
 
 healthy=false
 required_ports=(1935 8554 8091 8890 9997 9998)
@@ -45,6 +49,10 @@ curl --fail --silent --show-error --noproxy '*' http://127.0.0.1:8091/healthz
 echo
 echo "PUBLIC_FIREWALL"
 ufw status verbose
-ufw status | grep -Eq '^1935/tcp[[:space:]]+ALLOW' || { echo "ERROR: UFW lacks RTMP/1935 allow rule" >&2; exit 1; }
-ufw status | grep -Eq '^8890/udp[[:space:]]+ALLOW' || { echo "ERROR: UFW lacks SRT/8890 allow rule" >&2; exit 1; }
+if ! ufw_status=$(ufw status); then
+  echo "ERROR: could not inspect UFW status" >&2
+  exit 1
+fi
+grep -Eq '^1935/tcp[[:space:]]+ALLOW' <<<"${ufw_status}" || { echo "ERROR: UFW lacks RTMP/1935 allow rule" >&2; exit 1; }
+grep -Eq '^8890/udp[[:space:]]+ALLOW' <<<"${ufw_status}" || { echo "ERROR: UFW lacks SRT/8890 allow rule" >&2; exit 1; }
 echo "VERIFY_LOCAL_OK"
