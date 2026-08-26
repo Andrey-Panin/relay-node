@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -45,11 +46,20 @@ def test_fixed_public_ports_and_loopback_controls():
     assert "sshd -T" in firewall
 
 
-def test_public_bootstrap_is_intentionally_unconfigured_in_staging():
-    manager = read("bootstrap/manager.json")
+def test_public_bootstrap_is_bound_to_the_production_manager():
+    manager = json.loads(read("bootstrap/manager.json"))
     ca = read("bootstrap/manager-ca.pem")
-    assert "example.invalid" in manager
-    assert "RELEASE PLACEHOLDER" in ca
+    manager_host = "89.110." "88.252"
+    assert manager == {
+        "schema_version": 1,
+        "manager_url": f"https://{manager_host}",
+        "enrollment_path": "/api/v1/relay-enroll",
+        "activation_timeout_seconds": 300,
+    }
+    assert ca.startswith("-----BEGIN CERTIFICATE-----\n")
+    assert ca.rstrip().endswith("-----END CERTIFICATE-----")
+    assert "PRIVATE KEY" not in ca
+    assert "RELEASE PLACEHOLDER" not in ca
 
 
 def test_no_old_deployment_backup_or_hotfix_is_packaged():
