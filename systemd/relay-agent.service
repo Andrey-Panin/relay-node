@@ -1,0 +1,52 @@
+[Unit]
+Description=RTMP/SRT relay local control agent
+After=network-online.target
+Wants=network-online.target
+Before=mediamtx.service
+
+[Service]
+Type=simple
+User=relay-agent
+Group=media-relay
+EnvironmentFile=/etc/relay-agent/relay-agent.env
+LoadCredential=manager_token:/var/lib/relay-bootstrap/credentials/manager_token
+LoadCredential=state_signing_key:/var/lib/relay-bootstrap/credentials/state_signing_key
+ExecStart=/usr/bin/python3 -m relay_agent
+WorkingDirectory=/opt/relay-node/current
+Restart=always
+RestartSec=3s
+TimeoutStopSec=25s
+KillMode=mixed
+LimitNOFILE=65536
+TasksMax=512
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=all
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+StateDirectory=relay-agent
+StateDirectoryMode=0700
+RuntimeDirectory=relay-agent
+RuntimeDirectoryMode=0700
+ReadWritePaths=/var/lib/relay-agent /run/relay-agent
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=relay-agent
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=300
+
+[Install]
+WantedBy=multi-user.target

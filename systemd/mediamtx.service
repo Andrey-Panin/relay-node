@@ -1,0 +1,49 @@
+[Unit]
+Description=MediaMTX media router (pinned v1.20.1)
+Documentation=https://github.com/bluenviron/mediamtx
+After=network-online.target relay-agent.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mediamtx
+Group=media-relay
+ExecStart=/opt/mediamtx/current/mediamtx /etc/mediamtx/mediamtx.yml
+Restart=always
+RestartSec=3s
+TimeoutStopSec=20s
+KillSignal=SIGINT
+LimitNOFILE=65536
+TasksMax=512
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=all
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+StateDirectory=mediamtx
+StateDirectoryMode=0700
+RuntimeDirectory=mediamtx
+RuntimeDirectoryMode=0700
+ReadWritePaths=/var/lib/mediamtx /run/mediamtx /etc/mediamtx
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mediamtx
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=300
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.venv/
+venv/
+*.log
+*.tmp
+.deployment-backups/
+credentials/
+*.key
+*.p12
+*.pfx

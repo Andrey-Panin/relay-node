@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "manager_url": "https://89.110.88.252",
+  "enrollment_path": "/api/v1/relay-enroll",
+  "activation_timeout_seconds": 300
+}

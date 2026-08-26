@@ -1,0 +1,11 @@
+Copyright (c) 2026 Andrey Panin. All rights reserved.
+
+The contents of this repository are publicly viewable for deployment and
+security review. The copyright holder grants authorized operators a limited,
+non-exclusive, non-transferable permission to clone and run an unmodified copy
+solely on relay servers managed by the copyright holder. No other permission is
+granted to copy, modify, distribute, sublicense, sell, or create derivative
+works except with prior written permission from the copyright holder.
+
+Third-party components installed or referenced by this project remain subject
+to their own licenses. See THIRD_PARTY_NOTICES.md.

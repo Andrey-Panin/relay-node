@@ -1,0 +1,8 @@
+title = "relay-node public repository secret policy"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "The bundled manager CA is public trust material, never a private key"
+paths = ['''^bootstrap/manager-ca\.pem$''']

@@ -1,0 +1,47 @@
+# MediaMTX v1.20.1. Public inputs are fixed at RTMP/1935 and SRT/8890.
+# All control, worker input, and metrics listeners stay on loopback.
+logLevel: info
+logDestinations: [stdout]
+logStructured: true
+dumpPackets: false
+readTimeout: 15s
+writeTimeout: 15s
+writeQueueSize: 1024
+udpMaxPayloadSize: 1452
+udpReadBufferSize: 16777216
+
+authMethod: http
+authHTTPAddress: http://127.0.0.1:8091/v1/auth
+authHTTPExclude:
+  - action: api
+  - action: metrics
+  - action: pprof
+
+api: true
+apiAddress: 127.0.0.1:9997
+metrics: true
+metricsAddress: 127.0.0.1:9998
+pprof: false
+playback: false
+
+rtsp: true
+rtspTransports: [tcp]
+rtspAddress: 127.0.0.1:8554
+rtmp: true
+rtmpEncryption: "no"
+rtmpAddress: :1935
+srt: true
+srtAddress: :8890
+
+hls: false
+webrtc: false
+moq: false
+
+pathDefaults:
+  source: publisher
+  overridePublisher: false
+  maxReaders: 8
+  record: false
+
+# relay-agent creates only signed live/<stream_id> paths via loopback API.
+paths: {}
