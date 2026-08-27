@@ -103,9 +103,26 @@ cleanup() {
 }
 trap cleanup EXIT
 archive="${tmp_dir}/mediamtx.tar.gz"
-curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
-  --output "${archive}" \
-  "https://github.com/bluenviron/mediamtx/releases/download/v${MEDIAMTX_VERSION}/mediamtx_v${MEDIAMTX_VERSION}_linux_amd64.tar.gz"
+media_url="https://github.com/bluenviron/mediamtx/releases/download/v${MEDIAMTX_VERSION}/mediamtx_v${MEDIAMTX_VERSION}_linux_amd64.tar.gz"
+curl_transfer_args=(
+  --fail --silent --show-error --proto '=https' --tlsv1.2
+  --connect-timeout 12 --max-time 180 --retry 1 --retry-all-errors
+  --retry-delay 1 --retry-max-time 35
+)
+if ! curl --disable "${curl_transfer_args[@]}" --location --proto-redir '=https' \
+  --output "${archive}" "${media_url}"; then
+  echo "GitHub release CDN unreachable; trying the verified GitHub storage backend." >&2
+  redirect_headers="${tmp_dir}/mediamtx.headers"
+  fallback_config="${tmp_dir}/mediamtx.curl.conf"
+  rm -f -- "${archive}"
+  curl --disable --fail --silent --show-error --head --proto '=https' --tlsv1.2 \
+    --connect-timeout 12 --max-time 30 --output /dev/null \
+    --dump-header "${redirect_headers}" "${media_url}"
+  python3 "${SOURCE_ROOT}/scripts/github_release_fallback.py" \
+    "${redirect_headers}" "${fallback_config}"
+  curl --disable "${curl_transfer_args[@]}" --output "${archive}" \
+    --config "${fallback_config}"
+fi
 printf '%s  %s\n' "${MEDIAMTX_SHA256}" "${archive}" | sha256sum -c - >/dev/null
 tar -xzf "${archive}" -C "${tmp_dir}" mediamtx
 media_release="/opt/mediamtx/releases/v${MEDIAMTX_VERSION}"

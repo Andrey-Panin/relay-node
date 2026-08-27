@@ -34,6 +34,7 @@ scripts/check_public_tree.py
 scripts/firewall_apply.sh
 scripts/firewall_confirm.sh
 scripts/firewall_rollback.sh
+scripts/github_release_fallback.py
 scripts/install_runtime.sh
 scripts/preflight.sh
 scripts/render_config.py
@@ -47,6 +48,7 @@ tests/__init__.py
 tests/helpers.py
 tests/test_auth.py
 tests/test_bootstrap_client.py
+tests/test_github_release_fallback.py
 tests/test_install_contract.py
 tests/test_limits_v2.py
 tests/test_mediamtx.py
