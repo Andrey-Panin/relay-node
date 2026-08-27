@@ -10,6 +10,10 @@ installation it obtains software from the following upstream sources.
 - License: MIT
 - Integrity: the release archive is checked against the SHA-256 value embedded
   in `scripts/install_runtime.sh` before extraction.
+- Download fallback: when GitHub's release CDN is unreachable, the installer
+  derives GitHub's official `releaseassetproduction.blob.core.windows.net`
+  storage URL from a fresh signed GitHub redirect. It is not a third-party
+  mirror, and the same pinned SHA-256 check remains mandatory.
 
 ## FFmpeg
 
