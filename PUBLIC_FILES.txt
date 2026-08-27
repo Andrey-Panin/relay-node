@@ -48,6 +48,7 @@ tests/helpers.py
 tests/test_auth.py
 tests/test_bootstrap_client.py
 tests/test_install_contract.py
+tests/test_limits_v2.py
 tests/test_mediamtx.py
 tests/test_models.py
 tests/test_signing.py

@@ -17,7 +17,9 @@ from .signing import canonical_json, verify_payload
 
 
 class StateFetchError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -61,6 +63,7 @@ class ManagerClient:
     def __init__(self, manager_url: str, relay_id: str, token: str, ssl_context=None):
         self._state_url = f"{manager_url}/api/v1/relay-state/{relay_id}"
         self._telemetry_url = f"{manager_url}/api/v1/relays/{relay_id}/telemetry"
+        self._capabilities_url = f"{manager_url}/api/v1/relays/{relay_id}/capabilities"
         self._token = token
         handlers: list[Any] = [_NoRedirect()]
         if ssl_context is not None:
@@ -74,7 +77,9 @@ class ManagerClient:
                     raise StateFetchError(f"manager returned HTTP {response.status}")
                 return response.read(4 * 1024 * 1024 + 1)
         except urllib.error.HTTPError as exc:
-            raise StateFetchError(f"manager returned HTTP {exc.code}") from exc
+            raise StateFetchError(
+                f"manager returned HTTP {exc.code}", status_code=exc.code
+            ) from exc
         except (OSError, http.client.HTTPException) as exc:
             raise StateFetchError("manager request failed") from exc
 
@@ -99,6 +104,28 @@ class ManagerClient:
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         request = urllib.request.Request(
             self._telemetry_url,
+            data=body,
+            headers={
+                "Authorization": f"Bearer {self._token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            method="POST",
+        )
+        self._request(request)
+
+    def update_capabilities(
+        self, *, agent_version: str, supported_state_schemas: list[int]
+    ) -> None:
+        body = json.dumps(
+            {
+                "agent_version": agent_version,
+                "supported_state_schemas": supported_state_schemas,
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            self._capabilities_url,
             data=body,
             headers={
                 "Authorization": f"Bearer {self._token}",
@@ -222,4 +249,3 @@ class StateStore:
                 "last_manager_success": self.last_manager_success.isoformat() if self.last_manager_success else None,
                 "last_error": self.last_error,
             }
-

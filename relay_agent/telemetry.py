@@ -114,6 +114,7 @@ class TelemetryCollector:
         worker_statuses: list[dict[str, object]],
         traffic: dict[str, Any],
         mediamtx_healthy: bool,
+        applied_limits: dict[str, Any],
     ) -> dict[str, Any]:
         current_cpu = _read_cpu()
         cpu_percent = 0.0
@@ -138,7 +139,7 @@ class TelemetryCollector:
         self._last_kernel_tx = kernel_tx
 
         worker_map = {
-            (str(item.get("stream_id")), str(item.get("platform"))): item
+            (str(item.get("stream_id")), str(item.get("destination_id"))): item
             for item in worker_statuses
         }
         srt_items = parse_srt_metrics(raw_metrics)
@@ -167,7 +168,7 @@ class TelemetryCollector:
             srt = srt_by_stream.get(stream.stream_id, {})
             destinations: list[dict[str, Any]] = []
             for destination in stream.destinations:
-                worker = worker_map.get((stream.stream_id, destination.platform))
+                worker = worker_map.get((stream.stream_id, destination.destination_id))
                 internal = str(worker.get("state")) if worker else "missing"
                 status = {
                     "online": "online",
@@ -214,6 +215,7 @@ class TelemetryCollector:
         memory_percent = round(100.0 * memory_used / memory_total, 2) if memory_total else 0.0
         snapshot = {
             "generation": state.generation if state else 0,
+            "supported_state_schemas": [1, 2],
             "mediamtx_healthy": mediamtx_healthy,
             "cpu_percent": round(cpu_percent, 2),
             "memory_percent": memory_percent,
@@ -228,6 +230,13 @@ class TelemetryCollector:
             "projected_monthly_tx_bytes": int(traffic.get("projected_tx_bytes", 0)),
             "quota_tracking_started_at": traffic.get("tracking_started_at"),
             "quota_tracking_partial": True,
+            "applied_limit_revision": applied_limits.get("revision"),
+            "applied_max_server_connections": int(
+                applied_limits.get("max_server_connections", 0)
+            ),
+            "applied_monthly_traffic_quota_bytes": int(
+                applied_limits.get("monthly_traffic_quota_bytes", 0)
+            ),
             # Local-only fields are stripped before posting by manager_payload().
             "_local": {
                 "online": mediamtx_healthy and state_status.get("available", False),
@@ -285,4 +294,3 @@ class TelemetryCollector:
         if raw:
             lines.extend(("", raw.rstrip()))
         return "\n".join(lines) + "\n"
-

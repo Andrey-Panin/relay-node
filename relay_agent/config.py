@@ -58,6 +58,7 @@ class Config:
     state_poll_seconds: int
     path_poll_seconds: int
     telemetry_seconds: int
+    agent_version: str
     max_active_models: int
     traffic_quota_bytes: int
     ffmpeg_path: str
@@ -110,6 +111,7 @@ class Config:
             state_poll_seconds=_env_int("STATE_POLL_SECONDS", 5),
             path_poll_seconds=_env_int("PATH_POLL_SECONDS", 2),
             telemetry_seconds=_env_int("TELEMETRY_SECONDS", 15),
+            agent_version=os.getenv("AGENT_VERSION", "0.3.0").strip() or "0.3.0",
             max_active_models=_env_int("MAX_ACTIVE_MODELS", 15),
             traffic_quota_bytes=_env_int("TRAFFIC_QUOTA_BYTES", 32_000_000_000_000),
             ffmpeg_path=os.getenv("FFMPEG_PATH", "/usr/bin/ffmpeg"),
@@ -119,4 +121,3 @@ class Config:
         if self.manager_url.startswith("https://"):
             return ssl.create_default_context(cafile=self.manager_ca_file)
         return None
-

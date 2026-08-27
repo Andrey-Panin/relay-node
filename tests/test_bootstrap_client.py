@@ -73,6 +73,18 @@ def test_bundle_requires_fixed_ports_and_same_origin(tmp_path):
         bootstrap_client._validate_bundle(wrong_origin, manager)
 
 
+def test_bundle_accepts_state_schema_v1_and_v2_only(tmp_path):
+    manager = bootstrap_client.ManagerConfig.load(manager_file(tmp_path / "manager.json"))
+    for schema in (1, 2):
+        candidate = bundle()
+        candidate["desired_state_schema"] = schema
+        assert bootstrap_client._validate_bundle(candidate, manager)["desired_state_schema"] == schema
+    unsupported = bundle()
+    unsupported["desired_state_schema"] = 3
+    with pytest.raises(bootstrap_client.BootstrapError, match="incompatible"):
+        bootstrap_client._validate_bundle(unsupported, manager)
+
+
 def test_claim_id_is_durable_and_retry_safe(tmp_path):
     first = bootstrap_client._load_or_create_claim(tmp_path)
     second = bootstrap_client._load_or_create_claim(tmp_path)
@@ -102,6 +114,23 @@ def test_enrollment_writes_identity_last_and_reuses_it(tmp_path, monkeypatch):
     replayed, reused = bootstrap_client.enroll(manager, tmp_path / "ca.pem", state_dir, "0.2.0")
     assert reused is True
     assert replayed["agent_token"] == "A" * 32
+
+
+def test_enrollment_advertises_both_supported_state_schemas(tmp_path, monkeypatch):
+    manager = bootstrap_client.ManagerConfig.load(manager_file(tmp_path / "manager.json"))
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(bootstrap_client.getpass, "getpass", lambda _prompt: "P" * 24)
+    monkeypatch.setattr(bootstrap_client, "_ssl_context", lambda _path: object())
+    monkeypatch.setattr(bootstrap_client, "_opener", lambda _context: object())
+    monkeypatch.setattr(bootstrap_client, "_force_ipv4_networking", lambda: None)
+
+    def request_json(_opener, request, **_kwargs):
+        captured.update(json.loads(request.data))
+        return bundle()
+
+    monkeypatch.setattr(bootstrap_client, "_request_json", request_json)
+    bootstrap_client.enroll(manager, tmp_path / "ca.pem", tmp_path / "state", "0.3.0")
+    assert captured["supported_state_schemas"] == [1, 2]
 
 
 @pytest.mark.skipif(os.name != "posix", reason="directory mode semantics are POSIX-specific")

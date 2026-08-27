@@ -1,4 +1,4 @@
-"""One supervised FFmpeg process per (stream, platform)."""
+"""One supervised FFmpeg process per (stream, destination)."""
 
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ def _classify_error(line: str) -> str:
 @dataclass(frozen=True, slots=True)
 class WorkerKey:
     stream_id: str
-    platform: str
+    destination_id: str
 
 
 class DestinationWorker:
@@ -87,7 +87,7 @@ class DestinationWorker:
         self._stop = threading.Event()
         self._thread = threading.Thread(
             target=self._run,
-            name=f"worker-{key.stream_id[:8]}-{key.platform}",
+            name=f"worker-{key.stream_id[:8]}-{key.destination_id[:8]}",
             daemon=True,
         )
         self._process: subprocess.Popen | None = None
@@ -149,9 +149,10 @@ class DestinationWorker:
                 code = _classify_error(line)
                 self._last_error_code = code
                 LOG.warning(
-                    "ffmpeg diagnostic stream=%s platform=%s code=%s detail=%s",
+                    "ffmpeg diagnostic stream=%s destination=%s platform=%s code=%s detail=%s",
                     self.key.stream_id,
-                    self.key.platform,
+                    self.key.destination_id,
+                    self.destination.platform,
                     code,
                     _redact(line, self.destination, target),
                 )
@@ -215,9 +216,10 @@ class DestinationWorker:
                 )
             except OSError:
                 LOG.exception(
-                    "unable to start ffmpeg stream=%s platform=%s",
+                    "unable to start ffmpeg stream=%s destination=%s platform=%s",
                     self.key.stream_id,
-                    self.key.platform,
+                    self.key.destination_id,
+                    self.destination.platform,
                 )
                 self._state = "failed"
                 if self._stop.wait(BACKOFF_SECONDS[backoff_index]):
@@ -229,18 +231,23 @@ class DestinationWorker:
                 self._process = process
                 self._started_at = time.time()
             self._state = "running"
-            LOG.info("worker started stream=%s platform=%s", self.key.stream_id, self.key.platform)
+            LOG.info(
+                "worker started stream=%s destination=%s platform=%s",
+                self.key.stream_id,
+                self.key.destination_id,
+                self.destination.platform,
+            )
             stderr_thread = threading.Thread(
                 target=self._consume_stderr,
                 args=(process, target),
-                name=f"stderr-{self.key.stream_id[:8]}-{self.key.platform}",
+                name=f"stderr-{self.key.stream_id[:8]}-{self.key.destination_id[:8]}",
                 daemon=True,
             )
             stderr_thread.start()
             progress_thread = threading.Thread(
                 target=self._consume_progress,
                 args=(process,),
-                name=f"progress-{self.key.stream_id[:8]}-{self.key.platform}",
+                name=f"progress-{self.key.stream_id[:8]}-{self.key.destination_id[:8]}",
                 daemon=True,
             )
             progress_thread.start()
@@ -251,9 +258,10 @@ class DestinationWorker:
                     self._last_error_code = "stalled_output"
                     self._state = "stalled"
                     LOG.warning(
-                        "worker stalled stream=%s platform=%s; restarting",
+                        "worker stalled stream=%s destination=%s platform=%s; restarting",
                         self.key.stream_id,
-                        self.key.platform,
+                        self.key.destination_id,
+                        self.destination.platform,
                     )
                     self._terminate_process(process)
                     break
@@ -275,9 +283,10 @@ class DestinationWorker:
             self._restart_count += 1
             self._state = "backoff"
             LOG.warning(
-                "worker exited stream=%s platform=%s code=%s runtime_seconds=%.1f",
+                "worker exited stream=%s destination=%s platform=%s code=%s runtime_seconds=%.1f",
                 self.key.stream_id,
-                self.key.platform,
+                self.key.destination_id,
+                self.destination.platform,
                 exit_code,
                 runtime,
             )
@@ -308,7 +317,7 @@ class DestinationWorker:
         return {
             "stream_id": self.key.stream_id,
             "destination_id": self.destination.destination_id,
-            "platform": self.key.platform,
+            "platform": self.destination.platform,
             "state": self._state,
             "pid": pid,
             "started_at": self._started_at,
@@ -334,6 +343,12 @@ class WorkerSupervisor:
         self._lock = threading.RLock()
         self.over_capacity = False
 
+    def set_max_server_connections(self, value: int) -> None:
+        if value < 1:
+            raise ValueError("max_server_connections must be positive")
+        with self._lock:
+            self.max_active_models = value
+
     def reconcile(self, state: DesiredState, path_items: dict[str, dict]) -> None:
         streams = state.stream_map()
         ready_ids = sorted(
@@ -341,8 +356,12 @@ class WorkerSupervisor:
             for path, item in path_items.items()
             if path.startswith("live/") and item.get("online", item.get("ready", False)) is True
         )
-        self.over_capacity = len(ready_ids) > self.max_active_models
-        admitted_ids = set(ready_ids[: self.max_active_models])
+        with self._lock:
+            limit = self.max_active_models
+        self.over_capacity = len(ready_ids) > limit
+        # A lower v2 limit blocks future publisher admission. Existing ready
+        # publishers and their fan-out workers stay until they disconnect.
+        admitted_ids = set(ready_ids)
         desired: dict[WorkerKey, tuple[Destination, str]] = {}
         for stream_id in admitted_ids:
             stream = streams.get(stream_id)
@@ -351,7 +370,7 @@ class WorkerSupervisor:
             input_url = f"{self.input_base}/{stream.path}"
             for destination in stream.destinations:
                 if destination.enabled:
-                    key = WorkerKey(stream_id, destination.platform)
+                    key = WorkerKey(stream_id, destination.destination_id)
                     desired[key] = (destination, input_url)
 
         to_stop: list[DestinationWorker] = []
@@ -359,7 +378,12 @@ class WorkerSupervisor:
             for key, worker in list(self._workers.items()):
                 target = desired.get(key)
                 if target is None or worker.fingerprint != _configuration_fingerprint(target[0]):
-                    LOG.info("worker stopping stream=%s platform=%s", key.stream_id, key.platform)
+                    LOG.info(
+                        "worker stopping stream=%s destination=%s platform=%s",
+                        key.stream_id,
+                        key.destination_id,
+                        worker.destination.platform,
+                    )
                     to_stop.append(worker)
                     del self._workers[key]
 
@@ -391,5 +415,7 @@ class WorkerSupervisor:
 
     def statuses(self) -> list[dict[str, object]]:
         with self._lock:
-            return [self._workers[key].status() for key in sorted(self._workers, key=lambda x: (x.stream_id, x.platform))]
-
+            return [
+                self._workers[key].status()
+                for key in sorted(self._workers, key=lambda x: (x.stream_id, x.destination_id))
+            ]

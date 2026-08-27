@@ -260,7 +260,7 @@ def _validate_bundle(value: object, manager: ManagerConfig) -> dict[str, Any]:
         raise BootstrapError("manager returned an invalid model capacity")
     if not isinstance(quota, int) or isinstance(quota, bool) or not 1_000_000_000 <= quota <= 10**18:
         raise BootstrapError("manager returned an invalid traffic quota")
-    if value.get("desired_state_schema") != 1:
+    if value.get("desired_state_schema") not in {1, 2}:
         raise BootstrapError("manager and agent desired-state schemas are incompatible")
     return value
 
@@ -368,7 +368,7 @@ def enroll(
         {
             "claim_id": claim_id,
             "agent_version": version,
-            "supported_state_schemas": [1],
+            "supported_state_schemas": [1, 2],
         },
         separators=(",", ":"),
     ).encode("utf-8")
