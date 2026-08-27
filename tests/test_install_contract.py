@@ -43,6 +43,19 @@ def test_ubuntu_noble_and_media_versions_are_pinned_safely():
     assert "apt-mark hold ffmpeg" not in runtime
 
 
+def test_mediamtx_download_has_a_bounded_verified_official_fallback():
+    runtime = read("scripts/install_runtime.sh")
+    assert "--connect-timeout 12" in runtime
+    assert "--retry-max-time 35" in runtime
+    assert "--proto-redir '=https'" in runtime
+    assert "scripts/github_release_fallback.py" in runtime
+    assert '--config "${fallback_config}"' in runtime
+    assert "releaseassetproduction.blob.core.windows.net" not in runtime
+    assert 'curl --disable "${curl_transfer_args[@]}" --output "${archive}"' in runtime
+    assert runtime.index("github_release_fallback.py") < runtime.index("sha256sum -c -")
+    assert runtime.index('--config "${fallback_config}"') < runtime.index("sha256sum -c -")
+
+
 def test_fixed_public_ports_and_loopback_controls():
     mediamtx = read("config/mediamtx.yml")
     firewall = read("scripts/firewall_apply.sh")
@@ -59,10 +72,10 @@ def test_renderer_includes_release_agent_version():
     values = render_config._config_values(
         {"relay_id": "relay-id", "max_active_models": 15, "quota_bytes": 32_000_000_000_000},
         type("Manager", (), {"manager_url": "https://198.51.100.10"})(),
-        "0.3.0",
+        "0.3.1",
     )
-    assert values["AGENT_VERSION"] == "0.3.0"
-    assert "AGENT_VERSION=0.3.0" in read("config/relay-agent.env.example")
+    assert values["AGENT_VERSION"] == "0.3.1"
+    assert "AGENT_VERSION=0.3.1" in read("config/relay-agent.env.example")
 
 
 def test_public_bootstrap_is_bound_to_the_production_manager():
