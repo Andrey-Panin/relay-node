@@ -6,8 +6,7 @@ for file in \
   /var/lib/relay-bootstrap/identity.json \
   /var/lib/relay-bootstrap/credentials/manager_token \
   /var/lib/relay-bootstrap/credentials/state_signing_key \
-  /etc/relay-agent/relay-agent.env \
-  /etc/relay-agent/manager-ca.pem; do
+  /etc/relay-agent/relay-agent.env; do
   [[ -s ${file} ]] || { echo "ERROR: missing required bootstrap file ${file}" >&2; exit 1; }
 done
 grep -Eq '^RELAY_ID=[0-9a-f]{8}-[0-9a-f-]{27}$' /etc/relay-agent/relay-agent.env || {

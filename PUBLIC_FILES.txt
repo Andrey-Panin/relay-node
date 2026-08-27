@@ -10,7 +10,6 @@ SECURITY.md
 SHA256SUMS
 THIRD_PARTY_NOTICES.md
 VERSION
-bootstrap/manager-ca.pem
 bootstrap/manager.json
 config/90-media-relay.conf
 config/mediamtx.yml

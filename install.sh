@@ -10,6 +10,7 @@ fi
 [[ ${EUID} -eq 0 ]] || { echo "ERROR: run with sudo bash install.sh" >&2; exit 1; }
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+SYSTEM_CA_FILE=/etc/ssl/certs/ca-certificates.crt
 exec 9>/run/lock/relay-node-install.lock
 flock -n 9 || { echo "ERROR: another relay-node installation is running" >&2; exit 1; }
 
@@ -55,12 +56,12 @@ echo "[3/8] Installing pinned runtime into immutable releases"
 bash "${SCRIPT_DIR}/scripts/install_runtime.sh" --backup "${backup_dir}"
 
 echo "[4/8] Pairing with the relay manager"
+[[ -s ${SYSTEM_CA_FILE} ]] || { echo "ERROR: Ubuntu system CA bundle is missing" >&2; exit 1; }
 python3 "${SCRIPT_DIR}/scripts/bootstrap_client.py" enroll \
   --config "${SCRIPT_DIR}/bootstrap/manager.json" \
-  --ca-file "${SCRIPT_DIR}/bootstrap/manager-ca.pem" \
+  --ca-file "${SYSTEM_CA_FILE}" \
   --state-dir /var/lib/relay-bootstrap \
   --version-file "${SCRIPT_DIR}/VERSION"
-install -m 0644 -o root -g root "${SCRIPT_DIR}/bootstrap/manager-ca.pem" /etc/relay-agent/manager-ca.pem
 python3 "${SCRIPT_DIR}/scripts/render_config.py" \
   --config "${SCRIPT_DIR}/bootstrap/manager.json" \
   --state-dir /var/lib/relay-bootstrap \
@@ -83,7 +84,7 @@ bash "${SCRIPT_DIR}/scripts/verify.sh"
 echo "[7/8] Waiting for three healthy manager heartbeats and pool admission"
 python3 "${SCRIPT_DIR}/scripts/bootstrap_client.py" status \
   --config "${SCRIPT_DIR}/bootstrap/manager.json" \
-  --ca-file "${SCRIPT_DIR}/bootstrap/manager-ca.pem" \
+  --ca-file "${SYSTEM_CA_FILE}" \
   --state-dir /var/lib/relay-bootstrap \
   --version-file "${SCRIPT_DIR}/VERSION"
 

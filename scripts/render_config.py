@@ -19,7 +19,6 @@ def _config_values(bundle: dict[str, object], manager: ManagerConfig, agent_vers
         "RELAY_ID": str(bundle["relay_id"]),
         "AGENT_VERSION": agent_version,
         "MANAGER_URL": manager.manager_url,
-        "MANAGER_CA_FILE": "/etc/relay-agent/manager-ca.pem",
         "ALLOW_INSECURE_MANAGER_HTTP": "false",
         "MEDIAMTX_API_URL": "http://127.0.0.1:9997",
         "MEDIAMTX_INPUT_URL": "rtsp://127.0.0.1:8554",
