@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from scripts import check_public_tree
+from scripts import render_config
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -23,6 +24,8 @@ def test_top_level_three_command_installer_contract():
     assert "Ubuntu 24.04" not in installer  # delegated to preflight, no duplicated policy
     assert "bootstrap_client.py\" enroll" in installer
     assert "bootstrap_client.py\" status" in installer
+    assert 'render_config.py"' in installer
+    assert '--version-file "${SCRIPT_DIR}/VERSION"' in installer
     assert "scripts/backup.sh" in installer
     assert "scripts/rollback.sh" in installer
     assert "firewall_confirm.sh" in installer
@@ -50,6 +53,16 @@ def test_fixed_public_ports_and_loopback_controls():
     assert "1935/tcp" in firewall
     assert "8890/udp" in firewall
     assert "sshd -T" in firewall
+
+
+def test_renderer_includes_release_agent_version():
+    values = render_config._config_values(
+        {"relay_id": "relay-id", "max_active_models": 15, "quota_bytes": 32_000_000_000_000},
+        type("Manager", (), {"manager_url": "https://198.51.100.10"})(),
+        "0.3.0",
+    )
+    assert values["AGENT_VERSION"] == "0.3.0"
+    assert "AGENT_VERSION=0.3.0" in read("config/relay-agent.env.example")
 
 
 def test_public_bootstrap_is_bound_to_the_production_manager():

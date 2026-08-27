@@ -10,7 +10,9 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 
-PLATFORMS = frozenset({"chaturbate", "stripchat", "bongacams", "camsoda"})
+PLATFORMS = frozenset(
+    {"chaturbate", "stripchat", "bongacams", "camsoda", "exclusivelive"}
+)
 STREAM_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 CREDENTIAL_RE = re.compile(r"^[A-Za-z0-9_-]{24,192}$")
 CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
@@ -149,13 +151,48 @@ class Stream:
         if not isinstance(raw_destinations, list):
             raise StateValidationError("destinations must be a list")
         destinations = tuple(Destination.from_dict(item) for item in raw_destinations)
-        platforms = [item.platform for item in destinations]
-        if len(platforms) != len(set(platforms)):
-            raise StateValidationError("duplicate destination platform")
         destination_ids = [item.destination_id for item in destinations]
         if len(destination_ids) != len(set(destination_ids)):
             raise StateValidationError("duplicate destination_id")
         return cls(stream_id, credential, value["enabled"], destinations)
+
+
+@dataclass(frozen=True, slots=True)
+class RelayLimits:
+    """Signed relay-wide limits introduced with desired-state schema v2."""
+
+    revision: int
+    max_server_connections: int
+    monthly_traffic_quota_bytes: int
+
+    @classmethod
+    def from_dict(cls, value: Any) -> "RelayLimits":
+        if not isinstance(value, dict):
+            raise StateValidationError("limits must be an object")
+        _strict_keys(
+            value,
+            {"revision", "max_server_connections", "monthly_traffic_quota_bytes"},
+            "limits",
+        )
+        parsed: dict[str, int] = {}
+        for field in (
+            "revision",
+            "max_server_connections",
+            "monthly_traffic_quota_bytes",
+        ):
+            item = value[field]
+            if not isinstance(item, int) or isinstance(item, bool):
+                raise StateValidationError(f"limits.{field} must be an integer")
+            parsed[field] = item
+        if parsed["revision"] < 0:
+            raise StateValidationError("limits.revision must be non-negative")
+        if parsed["max_server_connections"] < 1:
+            raise StateValidationError("limits.max_server_connections must be positive")
+        if parsed["monthly_traffic_quota_bytes"] < 1:
+            raise StateValidationError(
+                "limits.monthly_traffic_quota_bytes must be positive"
+            )
+        return cls(**parsed)
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,17 +203,35 @@ class DesiredState:
     issued_at: datetime
     expires_at: datetime
     streams: tuple[Stream, ...]
+    limits: RelayLimits | None = None
 
     @classmethod
     def from_payload(cls, value: Any, expected_relay_id: str) -> "DesiredState":
         if not isinstance(value, dict):
             raise StateValidationError("payload must be an object")
-        _strict_keys(
-            value,
-            {"schema_version", "relay_id", "generation", "issued_at", "expires_at", "streams"},
-            "payload",
+        schema_version = value.get("schema_version")
+        expected_keys = (
+            {
+                "schema_version",
+                "relay_id",
+                "generation",
+                "issued_at",
+                "expires_at",
+                "streams",
+            }
+            if schema_version == 1
+            else {
+                "schema_version",
+                "relay_id",
+                "generation",
+                "issued_at",
+                "expires_at",
+                "streams",
+                "limits",
+            }
         )
-        if value["schema_version"] != 1:
+        _strict_keys(value, expected_keys, "payload")
+        if schema_version not in {1, 2}:
             raise StateValidationError("unsupported schema_version")
         if value["relay_id"] != expected_relay_id:
             raise StateValidationError("relay_id mismatch")
@@ -194,8 +249,18 @@ class DesiredState:
         ids = [item.stream_id for item in streams]
         if len(ids) != len(set(ids)):
             raise StateValidationError("duplicate stream_id")
-        return cls(1, expected_relay_id, generation, issued_at, expires_at, streams)
+        limits = RelayLimits.from_dict(value["limits"]) if schema_version == 2 else None
+        if limits is not None and limits.revision != generation:
+            raise StateValidationError("limits.revision must match generation")
+        return cls(
+            schema_version,
+            expected_relay_id,
+            generation,
+            issued_at,
+            expires_at,
+            streams,
+            limits,
+        )
 
     def stream_map(self) -> dict[str, Stream]:
         return {stream.stream_id: stream for stream in self.streams}
-

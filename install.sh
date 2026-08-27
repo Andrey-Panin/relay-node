@@ -64,6 +64,7 @@ install -m 0644 -o root -g root "${SCRIPT_DIR}/bootstrap/manager-ca.pem" /etc/re
 python3 "${SCRIPT_DIR}/scripts/render_config.py" \
   --config "${SCRIPT_DIR}/bootstrap/manager.json" \
   --state-dir /var/lib/relay-bootstrap \
+  --version-file "${SCRIPT_DIR}/VERSION" \
   --output /etc/relay-agent/relay-agent.env
 install -d -m 0750 -o root -g media-relay /etc/relay-agent
 chown root:media-relay /etc/relay-agent/relay-agent.env

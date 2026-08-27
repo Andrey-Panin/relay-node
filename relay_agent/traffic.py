@@ -5,6 +5,7 @@ from __future__ import annotations
 import calendar
 import json
 import logging
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -54,6 +55,14 @@ class TrafficAccountant:
         self.boot_reader = boot_reader
         self._state = self._load()
         self._last_warning_level = 0
+        self._lock = threading.RLock()
+
+    def set_quota_bytes(self, quota_bytes: int) -> None:
+        """Atomically apply a signed quota; counters remain monthly and intact."""
+        if quota_bytes < 1:
+            raise ValueError("quota_bytes must be positive")
+        with self._lock:
+            self.quota_bytes = quota_bytes
 
     def _load(self) -> dict:
         try:
@@ -63,6 +72,10 @@ class TrafficAccountant:
         return value if isinstance(value, dict) and value.get("schema_version") == 1 else {}
 
     def sample(self, now: datetime | None = None) -> dict[str, int | float | str]:
+        with self._lock:
+            return self._sample(now)
+
+    def _sample(self, now: datetime | None = None) -> dict[str, int | float | str]:
         now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         month = now.strftime("%Y-%m")
         boot_id = self.boot_reader()
@@ -146,4 +159,3 @@ class TrafficAccountant:
             "kernel_rx_bytes": rx_bytes,
             "kernel_tx_bytes": tx_bytes,
         }
-

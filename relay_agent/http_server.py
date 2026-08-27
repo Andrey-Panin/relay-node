@@ -39,6 +39,13 @@ class AdmissionController:
         self._ready_paths: set[str] = set()
         self._reservations: dict[str, float] = {}
 
+    def set_max_server_connections(self, value: int) -> None:
+        """Apply a signed cap without disturbing already-publishing clients."""
+        if value < 1:
+            raise ValueError("max_server_connections must be positive")
+        with self._lock:
+            self.max_active_models = value
+
     def update_ready_paths(self, paths: dict[str, dict]) -> None:
         ready = {
             name
@@ -53,6 +60,14 @@ class AdmissionController:
     def active_count(self) -> int:
         with self._lock:
             return len(self._ready_paths)
+
+    def limit_status(self) -> dict[str, int | bool]:
+        with self._lock:
+            return {
+                "max_server_connections": self.max_active_models,
+                "active_publishers": len(self._ready_paths),
+                "over_capacity": len(self._ready_paths) > self.max_active_models,
+            }
 
     def _reserve_capacity(self, path: str) -> bool:
         now = time.monotonic()
@@ -189,4 +204,3 @@ class AgentHTTPServer:
         self._server.shutdown()
         self._server.server_close()
         self._thread.join(timeout=5)
-

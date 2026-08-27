@@ -8,6 +8,16 @@ from .helpers import RELAY_ID, destination, envelope, stream
 
 
 class ModelTests(unittest.TestCase):
+    def test_same_platform_destinations_are_allowed_when_ids_differ(self):
+        state = DesiredState.from_payload(
+            envelope(streams=[stream(1, ("chaturbate", "chaturbate"))])["payload"],
+            RELAY_ID,
+        )
+        self.assertEqual(
+            [item.platform for item in state.streams[0].destinations],
+            ["chaturbate", "chaturbate"],
+        )
+
     def test_all_four_platforms_and_port_are_preserved(self):
         platforms = ("chaturbate", "stripchat", "bongacams", "camsoda")
         state = DesiredState.from_payload(envelope(streams=[stream(1, platforms)])["payload"], RELAY_ID)
@@ -30,4 +40,3 @@ class ModelTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

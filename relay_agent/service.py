@@ -50,6 +50,7 @@ class Runtime:
         self._runtime_lock = threading.RLock()
         self._paths: dict[str, dict] = {}
         self._mediamtx_healthy = False
+        self._applied_limit_revision: int | None = None
         self.http = AgentHTTPServer(
             config.listen_host,
             config.listen_port,
@@ -66,6 +67,8 @@ class Runtime:
         state = self.state_store.status()
         with self._runtime_lock:
             mediamtx_healthy = self._mediamtx_healthy
+            applied_limit_revision = self._applied_limit_revision
+        limit_status = self.admission.limit_status()
         return {
             "status": "ok" if mediamtx_healthy and state["available"] else "unavailable",
             "mediamtx_healthy": mediamtx_healthy,
@@ -75,7 +78,31 @@ class Runtime:
             "active_streams": self.admission.active_count(),
             "worker_count": len(self.supervisor.statuses()),
             "over_capacity": self.supervisor.over_capacity,
+            "applied_limit_revision": applied_limit_revision,
+            **limit_status,
+            "monthly_traffic_quota_bytes": self.traffic.quota_bytes,
         }
+
+    def _apply_limits(self, state) -> None:  # Avoid a runtime-only import cycle.
+        """Apply v2 limits, or retain the documented v1 environment defaults."""
+        limits = state.limits
+        max_connections = (
+            limits.max_server_connections
+            if limits is not None
+            else self.config.max_active_models
+        )
+        quota_bytes = (
+            limits.monthly_traffic_quota_bytes
+            if limits is not None
+            else self.config.traffic_quota_bytes
+        )
+        self.admission.set_max_server_connections(max_connections)
+        self.supervisor.set_max_server_connections(max_connections)
+        self.traffic.set_quota_bytes(quota_bytes)
+        with self._runtime_lock:
+            self._applied_limit_revision = (
+                limits.revision if limits is not None else None
+            )
 
     def _state_loop(self) -> None:
         last_logged = 0.0
@@ -84,6 +111,7 @@ class Runtime:
             try:
                 envelope = self.manager.fetch()
                 state = self.state_store.accept_remote(envelope)
+                self._apply_limits(state)
                 self.path_reconciler.reconcile(state)
                 if state.generation != last_generation:
                     LOG.info(
@@ -128,10 +156,11 @@ class Runtime:
                     except MediaMTXError:
                         LOG.error("managed MediaMTX path reconciliation failed")
             if self.supervisor.over_capacity and not last_over_capacity:
+                limit_status = self.admission.limit_status()
                 LOG.error(
                     "relay is over capacity active=%s limit=%s; no additional workers admitted",
-                    self.admission.active_count(),
-                    self.config.max_active_models,
+                    limit_status["active_publishers"],
+                    limit_status["max_server_connections"],
                 )
             last_over_capacity = self.supervisor.over_capacity
             self.stop_event.wait(self.config.path_poll_seconds)
@@ -143,6 +172,8 @@ class Runtime:
                 with self._runtime_lock:
                     paths = dict(self._paths)
                     healthy = self._mediamtx_healthy
+                    applied_limit_revision = self._applied_limit_revision
+                limit_status = self.admission.limit_status()
                 self.telemetry.collect(
                     state=self.state_store.snapshot(),
                     path_items=paths,
@@ -150,6 +181,13 @@ class Runtime:
                     worker_statuses=self.supervisor.statuses(),
                     traffic=traffic,
                     mediamtx_healthy=healthy,
+                    applied_limits={
+                        "revision": applied_limit_revision,
+                        "max_server_connections": limit_status[
+                            "max_server_connections"
+                        ],
+                        "monthly_traffic_quota_bytes": self.traffic.quota_bytes,
+                    },
                 )
                 self.manager.send_telemetry(self.telemetry.manager_payload())
             except (OSError, ValueError, StateFetchError):
@@ -162,6 +200,7 @@ class Runtime:
         try:
             cached = self.state_store.load_cache()
             if cached:
+                self._apply_limits(cached)
                 LOG.warning(
                     "bootstrapped from signed cache generation=%s expires_at=%s",
                     cached.generation,
@@ -169,6 +208,18 @@ class Runtime:
                 )
         except StateValidationError:
             LOG.error("signed desired-state cache is invalid; waiting for manager")
+        # Promote capabilities with the existing per-relay token. This does not
+        # re-enroll the node, rotate secrets, or restart MediaMTX.
+        try:
+            self.manager.update_capabilities(
+                agent_version=self.config.agent_version,
+                supported_state_schemas=[1, 2],
+            )
+        except (OSError, StateFetchError):
+            LOG.warning(
+                "capability promotion unavailable; continuing with signed state",
+                exc_info=False,
+            )
         self.http.start()
         for name, target in (
             ("state", self._state_loop),
@@ -206,4 +257,3 @@ def run(config: Config) -> None:
     while not runtime.stop_event.wait(1):
         pass
     runtime.stop()
-
