@@ -72,26 +72,32 @@ def test_renderer_includes_release_agent_version():
     values = render_config._config_values(
         {"relay_id": "relay-id", "max_active_models": 15, "quota_bytes": 32_000_000_000_000},
         type("Manager", (), {"manager_url": "https://198.51.100.10"})(),
-        "0.3.1",
+        "0.3.2",
     )
-    assert values["AGENT_VERSION"] == "0.3.1"
-    assert "AGENT_VERSION=0.3.1" in read("config/relay-agent.env.example")
+    assert values["AGENT_VERSION"] == "0.3.2"
+    assert "AGENT_VERSION=0.3.2" in read("config/relay-agent.env.example")
 
 
 def test_public_bootstrap_is_bound_to_the_production_manager():
     manager = json.loads(read("bootstrap/manager.json"))
-    ca = read("bootstrap/manager-ca.pem")
-    manager_host = "89.110." "88.252"
     assert manager == {
         "schema_version": 1,
-        "manager_url": f"https://{manager_host}",
+        "manager_url": "https://relay.exclusive-about.com",
         "enrollment_path": "/api/v1/relay-enroll",
         "activation_timeout_seconds": 300,
     }
-    assert ca.startswith("-----BEGIN CERTIFICATE-----\n")
-    assert ca.rstrip().endswith("-----END CERTIFICATE-----")
-    assert "PRIVATE KEY" not in ca
-    assert "RELEASE PLACEHOLDER" not in ca
+    installer = read("install.sh")
+    assert "SYSTEM_CA_FILE=/etc/ssl/certs/ca-certificates.crt" in installer
+    assert installer.count('--ca-file "${SYSTEM_CA_FILE}"') == 2
+    assert "bootstrap/manager-ca.pem" not in installer
+    assert "manager-ca.pem" not in read("scripts/start.sh")
+    assert "MANAGER_CA_FILE" not in read("config/relay-agent.env.example")
+    assert "MANAGER_CA_FILE" not in render_config._config_values(
+        {"relay_id": "relay-id", "max_active_models": 15, "quota_bytes": 32_000_000_000_000},
+        type("Manager", (), {"manager_url": "https://relay.exclusive-about.com"})(),
+        "0.3.2",
+    )
+    assert not (ROOT / "bootstrap/manager-ca.pem").exists()
 
 
 def test_no_old_deployment_backup_or_hotfix_is_packaged():
